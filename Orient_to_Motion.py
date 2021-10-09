@@ -39,66 +39,61 @@ def main(context, forward, up, keys):
     
    
     for ob in context.selected_objects:
-        lockkeys = [[],[],[],[]]
+        lockkeys = []
         last=False
-        
+        print("OTM")
         
         
         if keys=="keys":
             for fc in ob.animation_data.action.fcurves:
                 for kf in fc.keyframe_points:
                     if fc.data_path == 'location':
-                        lockkeys[fc.array_index].append(kf.co[1])
-                        lockkeys[3].append(kf.co[0])
+                    #   add rotation KFs on the left and right handles as well as the control points
+                    #   this makes for better interpolation around tight corners
+                        lockkeys.append(kf.handle_left[0])
+                        lockkeys.append(kf.co[0])
+                        lockkeys.append(kf.handle_right[0])
         else:
-            min = int(ob.animation_data.action.fcurves[0].keyframe_points[0].co[0])
-            max = int(ob.animation_data.action.fcurves[0].keyframe_points[0].co[0])
-            for fc in ob.animation_data.action.fcurves:
+            fc = ob.animation_data.action.fcurves
+            kmin = int(fc.find("location", index = 0).keyframe_points[0].co[0])
+            kmax = int(fc.find("location", index = 0).keyframe_points[-1].co[0])
+            for i in range(1, 3):
                 for kf in fc.keyframe_points: 
-                    if kf.co[0]<min: min = kf.co[0]
-                    if kf.co[0]>max: max = kf.co[0]
-                    
-            for frame in range(int(min), int(max)):
-                bpy.context.scene.frame_set(frame)
-                lockkeys[0].append(ob.location.x)
-                lockkeys[1].append(ob.location.y)
-                lockkeys[2].append(ob.location.z)
-                lockkeys[3].append(frame)
+                    kmin = min(kmin, int(fc.find("location", index = i).keyframe_points[kf].co[0]))
+                    kmax = max(kmax, int(fc.find("location", index = i).keyframe_points[kf].co[0]))
+
+            for frame in range(int(kmin), int(kmax)):
+                lockkeys.append(frame)
+
+        for i in range(0, len(lockkeys)):
+            locations = [ob.animation_data.action.fcurves.find("location", index= 0), ob.animation_data.action.fcurves.find("location", index= 1), ob.animation_data.action.fcurves.find("location", index= 2)]
             
-        print(lockkeys)
-        for i in range(0, len(lockkeys[0])):
-           
-               
-            #define direction
-            if i<=0: k1=0
-            else: k1 = i-1
-            if i>=len(lockkeys[0])-1: k2=len(lockkeys[0])-1
-            else: k2 = i+1
-            
-            
-            
-            Vector= (lockkeys[0][k2] - lockkeys[0][k1],lockkeys[1][k2] - lockkeys[1][k1],lockkeys[2][k2]-lockkeys[2][k1])
+            prevTime = lockkeys[i] - 0.5
+            nextTime = lockkeys[i] + 0.5
+            prevPos = [locations[0].evaluate(prevTime), locations[1].evaluate(prevTime), locations[2].evaluate(prevTime)]
+            nextPos = [locations[0].evaluate(nextTime), locations[1].evaluate(nextTime), locations[2].evaluate(nextTime)]
+            Vector= (nextPos[0] - prevPos[0], nextPos[1] - prevPos[1], nextPos[2] - prevPos[2])
             DirectionVector = mathutils.Vector(Vector)
              
             #apply rotation
             
             if ob.rotation_mode == 'QUATERNION':
                 bpy.context.object.rotation_quaternion = DirectionVector.to_track_quat(forward,up)
-                bpy.context.object.keyframe_insert(data_path='rotation_quaternion', frame=lockkeys[3][i] )
+                bpy.context.object.keyframe_insert(data_path='rotation_quaternion', frame=lockkeys[i] )
             else:
                 if last:
                     bpy.context.object.rotation_euler = DirectionVector.to_track_quat(forward,up).to_euler(ob.rotation_mode, last)
                 else:
+                    print("false")
                     bpy.context.object.rotation_euler = DirectionVector.to_track_quat(forward,up).to_euler(ob.rotation_mode)
                     
                 last=bpy.context.object.rotation_euler
-                bpy.context.object.keyframe_insert(data_path='rotation_euler', frame=lockkeys[3][i] )
-        
-                
+                bpy.context.object.keyframe_insert(data_path='rotation_euler', frame=lockkeys[i] )
+                     
 
 
 class OrientToMotion(bpy.types.Operator):
-    """Orient object to it's motion path"""
+    """Orient object to its motion path"""
     bl_idname = "object.orient_to_motion"
     bl_label = "Orient to Motion"
     bl_options = {'REGISTER', 'UNDO'}
